@@ -16,7 +16,7 @@ echo -e "\033[31m 4----- 阶段<其他主节点的安装> \033[0m"
 sleep 5
 sh node_install 
 rm -rf kubeadm-master.yaml
-
+rm -rf /etc/ansible/hosts
 echo -e '\033[36m ---------------------[kubernetesHA集群安装完成] \033[0m'
 echo '集群节点信息如下'
 kubectl  get no
