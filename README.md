@@ -1,3 +1,8 @@
+作者： ZJ-banks
+时间： 2019.11
+邮件： shatianxiaozi@163.com
+<h2> 简单kubernetes3节点HA自动安装脚本  <h2>
+
 修改本地 config 文件
 #安装节点IP  
 三个主节点IP
