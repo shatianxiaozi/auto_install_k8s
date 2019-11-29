@@ -1,0 +1,161 @@
+#!/bin/bash 
+
+. ./config
+
+echo -e '\033[32m ---------------------[安装etcd数据库...] \033[0m'
+echo -e '\033[32m ---------------------[安装kubernetes组件...] \033[0m'
+export HOST0=${HOST0}
+export HOST1=${HOST1}
+export HOST2=${HOST2}
+
+ansible etcd -m shell -a "systemctl start kubelet"
+# 设置环境变量 HOST0\HOST1\HOST2
+mkdir -p /root/etcd-cluster
+cd /root/etcd-cluster
+
+# 创建临时目录保存配置文件
+mkdir -p /root/etcd-cluster/${HOST0}/ /root/etcd-cluster/${HOST1}/ /root/etcd-cluster/${HOST2}/
+ETCDHOSTS=(${HOST0} ${HOST1} ${HOST2})
+NAMES=("infra0" "infra1" "infra2")
+#生产配置文件
+for i in "${!ETCDHOSTS[@]}"; do
+HOST=${ETCDHOSTS[$i]}
+NAME=${NAMES[$i]}
+cat  > /root/etcd-cluster/${HOST}/kubeadm-etcd.yaml << EOF
+apiVersion: "kubeadm.k8s.io/v1beta1"
+kind: ClusterConfiguration
+etcd:
+    local:
+        serverCertSANs:
+        - "${HOST0}"
+        - "${HOST1}"
+        - "${HOST2}"
+        peerCertSANs:
+        - "${HOST}"
+        extraArgs:
+            initial-cluster: ${NAMES[0]}=https://${ETCDHOSTS[0]}:2380,${NAMES[1]}=https://${ETCDHOSTS[1]}:2380,${NAMES[2]}=https://${ETCDHOSTS[2]}:2380
+            initial-cluster-state: new
+            name: ${NAME}
+            listen-peer-urls: https://${HOST}:2380
+            listen-client-urls: https://${HOST}:2379
+            advertise-client-urls: https://${HOST}:2379
+            initial-advertise-peer-urls: https://${HOST}:2380
+EOF
+done
+echo -e '\033[32m ---------------------[生成etcd证书...] \033[0m'
+#生成CA证书
+cd /root/etcd-cluster/
+openssl genrsa -out ca.key 2048 > /dev/null
+openssl req -new -key ca.key -out ca.csr -set_serial 0 -subj "/CN=etcd-ca" > /dev/null
+openssl x509 -req -days 7300 -in ca.csr -signkey ca.key -out /root/etcd-cluster/ca.crt  -extfile /etc/pki/tls/openssl.cnf  -extensions v3_req -extensions v3_ca > /dev/null
+
+ansible etcd -m shell -a 'mkdir -p /etc/kubernetes/pki/etcd/' > /dev/null
+ansible etcd -m shell -a 'mkdir -p /etc/kubernetes/etcd/' > /dev/null
+ansible etcd -m copy -a  'src=/root/etcd-cluster/ca.key dest=/etc/kubernetes/pki/etcd/ca.key' > /dev/null
+ansible etcd -m copy -a  'src=/root/etcd-cluster/ca.crt dest=/etc/kubernetes/pki/etcd/ca.crt' > /dev/null    
+ansible etcd -m copy -a  'src=/root/etcd-cluster/${HOST0}/kubeadm-etcd.yaml dest=/etc/kubernetes/etcd/kubeadm-etcd.yaml' > /dev/null 
+ansible etcd -m copy -a  'src=/root/etcd-cluster/${HOST1}/kubeadm-etcd.yaml dest=/etc/kubernetes/etcd/kubeadm-etcd.yaml' > /dev/null
+ansible etcd -m copy -a  'src=/root/etcd-cluster/${HOST2}/kubeadm-etcd.yaml dest=/etc/kubernetes/etcd/kubeadm-etcd.yaml' > /dev/null
+
+#创建证书生产脚本
+cat > gen-cert.sh << EOF
+kubeadm init phase certs etcd-server --config=/etc/kubernetes/etcd/kubeadm-etcd.yaml
+kubeadm init phase certs etcd-peer --config=/etc/kubernetes/etcd/kubeadm-etcd.yaml
+kubeadm init phase certs etcd-healthcheck-client --config=/etc/kubernetes/etcd/kubeadm-etcd.yaml
+kubeadm init phase certs apiserver-etcd-client --config=/etc/kubernetes/etcd/kubeadm-etcd.yaml
+EOF
+echo -e '\033[32m ---------------------[分发证书到各节点...] \033[0m'
+#将脚本复制到各个节点，并运行脚本
+ansible etcd -m copy -a  'src=/root/etcd-cluster/gen-cert.sh dest=/root/gen-cert.sh' > /dev/null
+ansible etcd -m shell -a 'sh /root/gen-cert.sh' > /dev/null
+
+cat > etcd0.sh << EOF
+docker run -d --net host \
+-v /etc/kubernetes:/etc/kubernetes -v /var/lib/etcd:/var/lib/etcd \
+k8s.gcr.io/etcd:3.3.10 \
+etcd \
+--cert-file=/etc/kubernetes/pki/etcd/server.crt \
+--client-cert-auth=true \
+--data-dir=/var/lib/etcd \
+--initial-cluster=infra0=https://${HOST0}:2380,infra1=https://${HOST1}:2380,infra2=https://${HOST2}:2380 \
+--initial-cluster-state=new \
+--key-file=/etc/kubernetes/pki/etcd/server.key \
+--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt \
+--peer-client-cert-auth=true \
+--peer-key-file=/etc/kubernetes/pki/etcd/peer.key \
+--peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--snapshot-count=10000 \
+--trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--name=infra0 \
+--advertise-client-urls=https://${HOST0}:2379 \
+--initial-advertise-peer-urls=https://${HOST0}:2380 \
+--listen-client-urls=https://${HOST0}:2379 \
+--listen-peer-urls=https://${HOST0}:2380 
+EOF
+
+cat > etcd1.sh << EOF
+docker run -d --net host \
+-v /etc/kubernetes:/etc/kubernetes -v /var/lib/etcd:/var/lib/etcd \
+k8s.gcr.io/etcd:3.3.10 \
+etcd \
+--cert-file=/etc/kubernetes/pki/etcd/server.crt \
+--client-cert-auth=true \
+--data-dir=/var/lib/etcd \
+--initial-cluster=infra0=https://${HOST0}:2380,infra1=https://${HOST1}:2380,infra2=https://${HOST2}:2380 \
+--initial-cluster-state=new \
+--key-file=/etc/kubernetes/pki/etcd/server.key \
+--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt \
+--peer-client-cert-auth=true \
+--peer-key-file=/etc/kubernetes/pki/etcd/peer.key \
+--peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--snapshot-count=10000 \
+--trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--name=infra1 \
+--advertise-client-urls=https://${HOST1}:2379 \
+--initial-advertise-peer-urls=https://${HOST1}:2380 \
+--listen-client-urls=https://${HOST1}:2379 \
+--listen-peer-urls=https://${HOST1}:2380 
+EOF
+
+cat > etcd2.sh << EOF
+docker run -d --net host \
+-v /etc/kubernetes:/etc/kubernetes -v /var/lib/etcd:/var/lib/etcd \
+k8s.gcr.io/etcd:3.3.10 \
+etcd \
+--cert-file=/etc/kubernetes/pki/etcd/server.crt \
+--client-cert-auth=true \
+--data-dir=/var/lib/etcd \
+--initial-cluster=infra0=https://${HOST0}:2380,infra1=https://${HOST1}:2380,infra2=https://${HOST2}:2380 \
+--initial-cluster-state=new \
+--key-file=/etc/kubernetes/pki/etcd/server.key \
+--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt \
+--peer-client-cert-auth=true \
+--peer-key-file=/etc/kubernetes/pki/etcd/peer.key \
+--peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--snapshot-count=10000 \
+--trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt \
+--name=infra2 \
+--advertise-client-urls=https://${HOST2}:2379 \
+--initial-advertise-peer-urls=https://${HOST2}:2380 \
+--listen-client-urls=https://${HOST2}:2379 \
+--listen-peer-urls=https://${HOST2}:2380 
+EOF
+
+ansible etcd -m shell -a 'docker pull mirrorgooglecontainers/etcd:3.3.10' > /dev/null
+ansible etcd -m shell -a 'docker tag mirrorgooglecontainers/etcd:3.3.10 k8s.gcr.io/etcd:3.3.10' > /dev/null
+ansible ${HOST0} -m copy -a 'src=/root/etcd-cluster/etcd0.sh  dest=/root/etcd.sh' > /dev/null
+ansible ${HOST1} -m copy -a 'src=/root/etcd-cluster/etcd1.sh  dest=/root/etcd.sh' > /dev/null
+ansible ${HOST2} -m copy -a 'src=/root/etcd-cluster/etcd2.sh  dest=/root/etcd.sh' > /dev/null
+ansible etcd -m shell -a 'docker container prune -f' > /dev/null
+ansible etcd -m shell -a 'sh /root/etcd.sh' > /dev/null
+
+ansible etcd -m shell -a 'rm -rf /root/etcd-cluster && rm -rf /root/gen-cert.sh' > /dev/null
+echo -e '\033[36m ---------------------[etcd数据库安装完成] \033[0m'
+echo '可用以下工具进行查看etcd集群是否健康'
+#设置etcdctl3别名便于使用
+
+echo "alias etcdctl3='docker run --rm -it --net host -e ETCDCTL_API=3 -v /etc/kubernetes:/etc/kubernetes k8s.gcr.io/etcd:3.3.10 etcdctl --cert /etc/kubernetes/pki/etcd/peer.crt --key /etc/kubernetes/pki/etcd/peer.key --cacert /etc/kubernetes/pki/etcd/ca.crt --endpoints https://${HOST0}:2379,https://${HOST1}:2379,https://${HOST2}:2379'"
+
+#echo "查看集群状态""
+echo "etcdctl3 endpoint status"
+echo -e '\033[36m ---------------------[kubernets组件安装完成] \033[0m' 

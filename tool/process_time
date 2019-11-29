@@ -1,0 +1,18 @@
+#!/bin/bash
+i=0;
+str=$2
+arr=("|" "/" "-" "\\")
+st="===================================================================================================="
+st_cut=${st: 0-${1}}
+while [ $i -le 100 ]
+do
+  let index=i%4
+  let indexcolor=6
+  let color=30+indexcolor
+  printf "\e[0;$color;1m[%-100s][%d%%]%c\r" "$str" "$i" "${arr[$index]}"
+  #printf "\e[0;$color;1m[%-100s][%d%%]%c\r" "$i" "${arr[$index]}"
+  sleep 0.1
+  let i+=$1
+  str+="${st_cut}"
+done
+printf "\n"

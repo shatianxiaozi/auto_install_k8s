@@ -1,0 +1,18 @@
+#!/bin/bash
+
+. ./config
+echo -e '\033[32m ---------------------[集群安装开始...] \033[0m'
+echo -e '\033[36m ---------------------[关闭各节点防火墙] \033[0m'
+yum install -y sshpass > /dev/null
+sed -i '/StrictHostKeyChecking ask/d' /etc/ssh/ssh_config
+echo 'StrictHostKeyChecking no' >>  /etc/ssh/ssh_config
+
+sshpass -p ${s} ssh root@${HOST0} systemctl stop firewalld > /dev/null
+sshpass -p ${s} ssh root@${HOST1} systemctl stop firewalld > /dev/null
+sshpass -p ${s} ssh root@${HOST2} systemctl stop firewalld > /dev/null
+sshpass -p ${s} ssh root@${HOST0} systemctl enable firewalld > /dev/null
+sshpass -p ${s} ssh root@${HOST1} systemctl enable firewalld > /dev/null
+sshpass -p ${s} ssh root@${HOST2} systemctl enable firewalld > /dev/null
+
+sed -i '/StrictHostKeyChecking no/d' /etc/ssh/ssh_config
+

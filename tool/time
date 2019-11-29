@@ -1,0 +1,9 @@
+#!/bin/bash
+s=$1
+str=$2
+for i in `seq -w ${s} -1 1`
+  do
+    echo -ne "   \033[31m < $i's > ${str}\033[0m";
+    echo -ne "\r  \r"
+    sleep 1;
+  done

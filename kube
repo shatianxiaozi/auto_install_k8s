@@ -1,0 +1,68 @@
+#!/bin/bash
+
+. ./config
+
+echo -e '\033[32m ---------------------[安装配置第一个主节点...] \033[0m'
+cat > ./kubeadm-master.yaml << EOF
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: ${HOST0}
+  bindPort: 6443
+nodeRegistration:
+  taints:
+  - effect: PreferNoSchedule
+    key: node-role.kubernetes.io/master
+---
+apiVersion: kubeadm.k8s.io/v1beta1
+kind: ClusterConfiguration
+kubernetesVersion: ${version}
+imageRepository: registry.aliyuncs.com/google_containers 
+controlPlaneEndpoint: "${kubed}:6443"
+apiServer:
+  CertSANs:
+  - "${kubed}"
+networking:
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/12
+etcd:
+  external:
+    endpoints:
+    - https://${HOST0}:2379
+    - https://${HOST1}:2379
+    - https://${HOST2}:2379
+    caFile: /etc/kubernetes/pki/etcd/ca.crt
+    certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
+    keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+featureGates:
+  SupportIPVSProxyMode: true
+mode: ipvs
+EOF
+
+
+ansible etcd -m shell -a "echo '127.0.0.1 ${n1} localhost' >/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo 'kube.cluster ${HOST0}' >>/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo 'kube.cluster ${HOST1}' >>/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo 'kube.cluster ${HOST2}' >>/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo '${HOST0} kube.cluster ${n1}' >>/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo '${HOST1} kube.cluster ${n2}' >>/etc/hosts" > /dev/null
+ansible etcd -m shell -a "echo '${HOST2} kube.cluster ${n3}' >>/etc/hosts" > /dev/null
+
+ansible etcd -m shell -a "kubeadm config images pull --image-repository registry.aliyuncs.com/google_containers" > /dev/null
+kubeadm  init --config ./kubeadm-master.yaml > master_info.txt
+
+sh scpt.sh ${HOST1} 
+sh scpt.sh ${HOST2}
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+sh ./tool/time 20 后第一主节点安装结束
+echo -e '\033[36m ---------------------[第一个主节点初始化完成] \033[0m'
+echo "配置信息如下"
+cat ./master_info.txt
+

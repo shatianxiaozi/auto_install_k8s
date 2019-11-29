@@ -1,0 +1,17 @@
+#!/bin/bash
+
+. ./config
+
+token=`sed -n '/  kubeadm join kube.cluster/,/control-plane/p' ./master_info.txt | awk '{print $5}'`
+code=`sed -n '/  kubeadm join kube.cluster/,/control-plane/p' ./master_info.txt | awk '{print $2}'|sed -n '/sha256/p'`
+command="kubeadm join kube.cluster:6443 --token ${token} --discovery-token-ca-cert-hash ${code} --control-plane"
+
+#c=`sed -n '/  kubeadm join kube.cluster/,/control-plane/p' ./master_info.txt | tr -d '\\'`
+echo -e '\033[32m ---------------------[安装配置第二个主节点...] \033[0m'
+ansible ${HOST1} -m shell -a "$command"
+sh ./tool/time 20 后第二主节点安装结束
+echo -e '\033[36m ---------------------[第二个主节点初始化完成] \033[0m'
+echo -e '\033[32m ---------------------[安装配置第三个主节点...] \033[0m'
+ansible ${HOST2} -m shell -a "$command"
+sh ./tool/time 20 后第三主节点安装结束
+echo -e '\033[36m ---------------------[第三个主节点初始化完成] \033[0m'
