@@ -20,9 +20,8 @@ ansible ${HOST0} -m shell -a "hostnamectl set-hostname ${n1}" > /dev/null
 ansible ${HOST1} -m shell -a "hostnamectl set-hostname ${n2}" > /dev/null
 ansible ${HOST2} -m shell -a "hostnamectl set-hostname ${n3}" > /dev/null
 
-
 #安装docker
-ansible etcd -m shell -a 'yum install -y yum-utils && mkdir -p /etc/docker/' > /dev/null
+ansible etcd -m shell -a 'yum install -y yum-utils ntpdate && mkdir -p /etc/docker/' > /dev/null
 ansible etcd -m shell -a 'yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo' > /dev/null
 ansible etcd -m shell -a 'yum install -y docker-ce-18.06.3.ce-3.el7' > /dev/null
 cat >> /etc/docker/daemon.json << EOF
@@ -43,6 +42,10 @@ cat >> /etc/docker/daemon.json << EOF
     ]
 }
 EOF
+#添加时间同步
+ansible etcd -m shell -a 'echo "* * * * * root ntpdate ntp1.aliyun.com" >> /etc/crontab' > /dev/null
+ansible etcd -m shell -a 'systemctl restart crond' > /dev/null
+
 ansible etcd -m copy -a 'src=/etc/docker/daemon.json dest=/etc/docker/daemon.json' > /dev/null
 ansible etcd -m shell -a 'systemctl daemon-reload && systemctl restart docker' > /dev/null
 #安装k8s组件
