@@ -155,7 +155,7 @@ echo '可用以下工具进行查看etcd集群是否健康'
 #设置etcdctl3别名便于使用
 
 echo "alias etcdctl3='docker run --rm -it --net host -e ETCDCTL_API=3 -v /etc/kubernetes:/etc/kubernetes k8s.gcr.io/etcd:3.3.10 etcdctl --cert /etc/kubernetes/pki/etcd/peer.crt --key /etc/kubernetes/pki/etcd/peer.key --cacert /etc/kubernetes/pki/etcd/ca.crt --endpoints https://${HOST0}:2379,https://${HOST1}:2379,https://${HOST2}:2379'"
-
+echo "alias etcdctl3='docker run --rm -it --net host -e ETCDCTL_API=3 -v /etc/kubernetes:/etc/kubernetes k8s.gcr.io/etcd:3.3.10 etcdctl --cert /etc/kubernetes/pki/etcd/peer.crt --key /etc/kubernetes/pki/etcd/peer.key --cacert /etc/kubernetes/pki/etcd/ca.crt --endpoints https://${HOST0}:2379,https://${HOST1}:2379,https://${HOST2}:2379'" >> ./install.log
 #echo "查看集群状态""
-echo "etcdctl3 endpoint status"
+echo "etcdctl3 endpoint status --write-out=table"
 echo -e '\033[36m ---------------------[kubernets组件安装完成] \033[0m' 
